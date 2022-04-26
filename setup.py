@@ -7,9 +7,9 @@ setup(
 	name="carrim",
     author="Alexandre Adam",
     author_email="alexandre.adam@umontreal.ca",
-    short_description=""
+    short_description="",
     long_description=long_description,
-    long_description_content_type='text/markdown'
+    long_description_content_type='text/markdown',
 	version="0.1",
 	description="",
 	packages=find_packages(),
