@@ -1,0 +1,2 @@
+from .rim_model_analytic import ModelAnalytic
+from .rim_cnn_model_analytic import ModelCNNAnalytic
