@@ -1,15 +1,16 @@
 import tensorflow as tf
-from carrim.models import ModelAnalytic, ModelCNNAnalytic
+import numpy as np
+from carrim.models import Model, CNN
 from carrim.definitions import DTYPE
-from carrim import AnalyticalPhysicalModelv2
+from carrim import PhysicalModel
 from carrim.utils import nulltape
 
 
-class RIMAnalytic:
+class RIM:
     def __init__(
             self,
-            physical_model: AnalyticalPhysicalModelv2,
-            model: ModelAnalytic,
+            physical_model: PhysicalModel,
+            model: Model,
             cnn_model,
             steps: int,
             adam=True,
@@ -62,20 +63,21 @@ class RIMAnalytic:
         batch_size = lensed_image.shape[0]
         states = self.initial_states(batch_size)
 
-        xt_series = tf.TensorArray(DTYPE, size=self.steps)
-        chi_squared_series = tf.TensorArray(DTYPE, size=self.steps)
+        xt_series = tf.TensorArray(DTYPE, size=self.steps+1)
+        chi_squared_series = tf.TensorArray(DTYPE, size=self.steps+1)
 
         # make initial guess
         xt = self.cnn_model(lensed_image)
         xt_series = xt_series.write(index=0, value=xt)
         # optimize with RIM
-        for current_step in range(1, self.steps):
+        for current_step in range(1, self.steps+1):
             with outer_tape.stop_recording():
                 with tf.GradientTape() as g:
                     g.watch(xt)
                     zt = self.link(xt)
                     y_pred = self.physical_model.lens_source_sersic_func_vec(zt, psf_fwhm)
-                    log_likelihood = 0.5 * tf.reduce_sum(tf.square(lensed_image - y_pred) / noise_rms[:, None, None, None]**2, axis=(1, 2, 3))
+                    lam = tf.reduce_sum(lensed_image * y_pred, axis=(1, 2, 3), keepdims=True) / tf.reduce_sum(lensed_image**2, axis=(1, 2, 3), keepdims=True)
+                    log_likelihood = 0.5 * tf.reduce_sum(tf.square(lam * lensed_image - y_pred) / noise_rms[:, None, None, None]**2, axis=(1, 2, 3))
             grad = g.gradient(log_likelihood, xt)
             grad = self.grad_update(grad, current_step)
             xt, states = self.time_step(xt, grad, states)
@@ -85,16 +87,16 @@ class RIMAnalytic:
         zt = self.link(xt)
         y_pred = self.physical_model.lens_source_sersic_func_vec(zt, psf_fwhm)
         log_likelihood = 0.5 * tf.reduce_sum(tf.square(lensed_image - y_pred) / noise_rms[:, None, None, None] ** 2, axis=(1, 2, 3))
-        chi_squared_series = chi_squared_series.write(index=self.steps-1, value=2*log_likelihood/self.physical_model.pixels**2)
+        chi_squared_series = chi_squared_series.write(index=self.steps, value=2*log_likelihood/self.physical_model.pixels**2)
         return xt_series.stack(), chi_squared_series.stack()
 
 
 if __name__ == '__main__':
-    phys = AnalyticalPhysicalModelv2()
-    lens = phys.lens_source_sersic_func()
-    model = ModelAnalytic()
-    cnn_model = ModelCNNAnalytic()
-    rim = RIMAnalytic(phys, model, cnn_model, steps=2)
+    phys = PhysicalModel()
+    lens = phys.noisy_lens_sersic_func()
+    model = Model()
+    cnn_model = CNN()
+    rim = RIM(phys, model, cnn_model, steps=4)
     xt, c = rim.call(lens, noise_rms=tf.constant([0.01], dtype=tf.float32), psf_fwhm=tf.constant([0.1], dtype=tf.float32))
     print(xt.numpy())
     print(c.numpy())

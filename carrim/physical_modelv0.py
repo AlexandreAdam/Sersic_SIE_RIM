@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow_addons as tfa
 
 
-class AnalyticalPhysicalModel:
+class PhysicalModelv0:
     def __init__(
             self,
             pixels=256,

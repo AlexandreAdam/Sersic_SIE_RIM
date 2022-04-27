@@ -9,12 +9,13 @@
 #SBATCH --job-name=Train_RIM_analytic_Gridsearch
 #SBATCH --output=%x-%j.out
 source $HOME/environments/carrim/bin/activate
-python $ARIM/rim_analytic_gridsearch.py\
+python $ARIM/rim_gridsearch.py\
   --n_models=100\
   --strategy=uniform\
   --steps 4 8 12\
   --adam 0 1\
   --units 16 32 64\
+  --cnn_architecture custom perreault_levasseur2016 resnet50 resnet101 InceptionV3\
   --cnn_levels 3 4\
   --cnn_layer_per_level 1 2\
   --cnn_input_kernel_size 7 11\

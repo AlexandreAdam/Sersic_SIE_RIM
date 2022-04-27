@@ -3,14 +3,14 @@ from .layers import GRU
 from .utils import get_activation
 
 
-class ModelAnalytic(tf.keras.Model):
+class Model(tf.keras.Model):
     def __init__(
             self,
             units=32,
             activation="tanh"
         ):
 
-        super(ModelAnalytic, self).__init__()
+        super(Model, self).__init__()
         activation = get_activation(activation)
         self.hidden_units = units
 

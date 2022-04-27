@@ -21,7 +21,8 @@ CNN_MODEL_HPARAMS = [
     "cnn_layer_per_level",
     "cnn_input_kernel_size",
     "cnn_filters",
-    "cnn_activation"
+    "cnn_activation",
+    "cnn_architecture"
 ]
 
 EXTRA_PARAMS = [
@@ -53,7 +54,8 @@ PARAMS_NICKNAME = {
     "cnn_layer_per_level": "LL",
     "cnn_input_kernel_size": "IK",
     "cnn_filters": "F",
-    "cnn_activation": "CA"
+    "cnn_activation": "",
+    "cnn_architecture": ""
 }
 
 
@@ -159,7 +161,7 @@ if __name__ == '__main__':
     parser.add_argument("--strategy",               default="uniform",              help="Allowed startegies are 'uniform' and 'exhaustive'.")
 
     # Physical parameters
-    parser.add_argument("--pixels",                 default=16,    type=int)
+    parser.add_argument("--pixels",                 default=192,    type=int)
     parser.add_argument("--image_fov",              default=7.68,   type=float)
     parser.add_argument("--src_fov",                default=3.,     type=float)
     parser.add_argument("--psf_cutout_size",        default=16,     type=int)
@@ -173,8 +175,8 @@ if __name__ == '__main__':
     parser.add_argument("--max_ellipticity",        default=0.4,    type=float)
     parser.add_argument("--max_lens_shift",         default=0.3,    type=float)
     parser.add_argument("--max_source_shift",       default=0.3,    type=float)
-    parser.add_argument("--noise_rms_min",          default=0.001,  type=float)
-    parser.add_argument("--noise_rms_max",          default=0.2,    type=float)
+    parser.add_argument("--noise_rms_min",          default=0.01,  type=float)
+    parser.add_argument("--noise_rms_max",          default=0.1,    type=float)
     parser.add_argument("--noise_rms_mean",         default=0.08,   type=float)
     parser.add_argument("--noise_rms_std",          default=0.1,    type=float)
     parser.add_argument("--psf_fwhm_min",           default=0.06,   type=float)
@@ -183,6 +185,8 @@ if __name__ == '__main__':
     parser.add_argument("--psf_fwhm_std",           default=0.1,    type=float)
 
     # CNN model hparams
+    parser.add_argument("--cnn_architecture",           default="custom", nargs="+", help="One of ['custom', 'perreault_levasseur2016', 'resnet50', 'resnet50V2', 'resnet101', 'resnet101V2', 'inceptionV3', 'inception_resnetV2']")
+    # ... for custom architecture
     parser.add_argument("--cnn_levels",                 default=4, nargs="+",       type=int)
     parser.add_argument("--cnn_layer_per_level",        default=2, nargs="+",       type=int)
     parser.add_argument("--cnn_input_kernel_size",      default=11, nargs="+",      type=int)

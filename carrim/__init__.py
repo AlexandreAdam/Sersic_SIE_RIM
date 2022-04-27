@@ -1,3 +1,3 @@
-from .analytical_physical_model import AnalyticalPhysicalModel
-from .analytical_physical_modelv2 import AnalyticalPhysicalModelv2
-from .rim_analytic import RIMAnalytic
+from .physical_modelv0 import PhysicalModelv0
+from .physical_model import PhysicalModel
+from .rim import RIM

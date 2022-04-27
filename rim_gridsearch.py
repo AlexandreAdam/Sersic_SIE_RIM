@@ -1,7 +1,7 @@
 import numpy as np
 import os
 from datetime import datetime
-from train_rim_analytic import main
+from train_rim import main
 import copy
 import pandas as pd
 
@@ -30,7 +30,8 @@ CNN_MODEL_HPARAMS = [
     "cnn_layer_per_level",
     "cnn_input_kernel_size",
     "cnn_filters",
-    "cnn_activation"
+    "cnn_activation",
+    "cnn_architecture"
 ]
 
 EXTRA_PARAMS = [
@@ -65,7 +66,8 @@ PARAMS_NICKNAME = {
     "cnn_layer_per_level": "LL",
     "cnn_input_kernel_size": "IK",
     "cnn_filters": "F",
-    "cnn_activation": "CA"
+    "cnn_activation": "",
+    "cnn_architecture": ""
 }
 
 
@@ -144,11 +146,13 @@ def distributed_strategy(args):
     for gridsearch_id in range((THIS_WORKER - 1), len(gridsearch_args), N_WORKERS):
         run_args = gridsearch_args[gridsearch_id]
         history, best_score = main(run_args)
-        params_dict = {k: v for k, v in vars(run_args).items() if k in RIM_HPARAMS + MODEL_HPARAMS + EXTRA_PARAMS + CNN_MODEL_HPARAMS }
+        params_dict = {k: v for k, v in vars(run_args).items() if k in RIM_HPARAMS + MODEL_HPARAMS + EXTRA_PARAMS + CNN_MODEL_HPARAMS}
         params_dict.update({
             "experiment_id": run_args.logname,
-            "train_cost": history["train_cost"][-1],
-            "train_chi_squared": history["train_chi_squared"][-1],
+            "cost": history["cost"][-1],
+            "cnn_cost": history["cnn_cost"][-1],
+            "rim_cost": history["rim_cost"][-1],
+            "chi_squared": history["chi_squared"][-1],
             "best_score": best_score,
         })
         # Save hyperparameters and scores in shared csv for this gridsearch
@@ -176,7 +180,7 @@ if __name__ == '__main__':
     parser.add_argument("--adam",                   default=0,      nargs="+",  type=int,       help="ADAM update for the log-likelihood gradient.")
 
     # Physical parameters
-    parser.add_argument("--pixels",                 default=128,    type=int)
+    parser.add_argument("--pixels",                 default=192,    type=int)
     parser.add_argument("--image_fov",              default=7.68,   type=float)
     parser.add_argument("--src_fov",                default=3.,     type=float)
     parser.add_argument("--psf_cutout_size",        default=16,     type=int)
@@ -204,6 +208,8 @@ if __name__ == '__main__':
     parser.add_argument("--activation",             default="tanh", nargs="+")
 
     # CNN model hparams
+    parser.add_argument("--cnn_architecture",           default="custom", nargs="+", help="One of ['custom', 'perreault_levasseur2016', 'resnet50', 'resnet50V2', 'resnet101', 'resnet101V2', 'inceptionV3', 'inception_resnetV2']")
+    # ... for custom architecture
     parser.add_argument("--cnn_levels",                 default=4, nargs="+",       type=int)
     parser.add_argument("--cnn_layer_per_level",        default=2, nargs="+",       type=int)
     parser.add_argument("--cnn_input_kernel_size",      default=11, nargs="+",      type=int)

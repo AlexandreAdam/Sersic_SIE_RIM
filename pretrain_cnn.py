@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
-from carrim import AnalyticalPhysicalModelv2
-from carrim.models import ModelCNNAnalytic
+from carrim import PhysicalModel
+from carrim.models import CNN
 from carrim.utils import nullwriter
 import os, time, json
 from datetime import datetime
@@ -18,11 +18,13 @@ CNN_MODEL_HPARAMS = [
     "layer_per_level",
     "input_kernel_size",
     "filters",
-    "activation"
+    "activation",
+    "architecture"
 ]
 
 
 def main(args):
+
     if args.seed is not None:
         tf.random.set_seed(args.seed)
         np.random.seed(args.seed)
@@ -37,7 +39,7 @@ def main(args):
             args_dict = vars(args)
             args_dict.update(json_override)
 
-    phys = AnalyticalPhysicalModelv2(
+    phys = PhysicalModel(
         pixels=args.pixels,
         image_fov=args.image_fov,
         src_fov=args.src_fov,
@@ -62,7 +64,8 @@ def main(args):
         psf_fwhm_mean=args.psf_fwhm_mean
     )
 
-    cnn_model = ModelCNNAnalytic(
+    cnn_model = CNN(
+        architecture=args.cnn_architecture,
         levels=args.cnn_levels,
         layer_per_level=args.cnn_layer_per_level,
         input_kernel_size=args.cnn_input_kernel_size,
@@ -140,7 +143,7 @@ def main(args):
         with tf.GradientTape() as tape:
             tape.watch(cnn_model.trainable_variables)
             y = cnn_model.call(lens)
-            cost = tf.reduce_mean(tf.square(y - params))
+            cost = tf.reduce_mean(tf.square(y - phys.physical_to_model(params)))
         gradient = tape.gradient(cost, cnn_model.trainable_variables)
         gradient = [tf.clip_by_norm(grad, 5.) for grad in gradient]
         optim.apply_gradients(zip(gradient, cnn_model.trainable_variables))
@@ -234,7 +237,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_id",               default="None",                 help="Start from this model id checkpoint. None means start from scratch")
 
     # Physical parameters
-    parser.add_argument("--pixels",                 default=32,    type=int)
+    parser.add_argument("--pixels",                 default=192,    type=int)
     parser.add_argument("--image_fov",              default=7.68,   type=float)
     parser.add_argument("--src_fov",                default=3.,     type=float)
     parser.add_argument("--psf_cutout_size",        default=16,     type=int)
@@ -249,15 +252,17 @@ if __name__ == "__main__":
     parser.add_argument("--max_lens_shift",         default=0.3,    type=float)
     parser.add_argument("--max_source_shift",       default=0.3,    type=float)
     parser.add_argument("--noise_rms_min",          default=0.001,  type=float)
-    parser.add_argument("--noise_rms_max",          default=0.1,   type=float)
+    parser.add_argument("--noise_rms_max",          default=0.1,    type=float)
     parser.add_argument("--noise_rms_mean",         default=0.01,   type=float)
-    parser.add_argument("--noise_rms_std",          default=0.05,   type=float)
+    parser.add_argument("--noise_rms_std",          default=0.05,    type=float)
     parser.add_argument("--psf_fwhm_min",           default=0.06,   type=float)
     parser.add_argument("--psf_fwhm_max",           default=0.5,    type=float)
     parser.add_argument("--psf_fwhm_mean",          default=0.1,    type=float)
     parser.add_argument("--psf_fwhm_std",           default=0.1,    type=float)
 
     # CNN model hparams
+    parser.add_argument("--cnn_architecture",           default="custom", help="One of ['custom', 'perreault_levasseur2016', 'resnet50', 'resnet50V2', 'resnet101', 'resnet101V2', 'inceptionV3', 'inception_resnetV2']")
+    # ... for custom layer only
     parser.add_argument("--cnn_levels",                 default=4,      type=int)
     parser.add_argument("--cnn_layer_per_level",        default=2,      type=int)
     parser.add_argument("--cnn_input_kernel_size",      default=11,      type=int)
@@ -269,7 +274,7 @@ if __name__ == "__main__":
     parser.add_argument("--total_items",            default=10,   type=int,       help="Total images in an epoch.")
 
     # Optimization params
-    parser.add_argument("-e", "--epochs",           default=5,     type=int,       help="Number of epochs for training.")
+    parser.add_argument("-e", "--epochs",           default=100,     type=int,       help="Number of epochs for training.")
     parser.add_argument("--optimizer",              default="Adamax",               help="Class name of the optimizer (e.g. 'Adam' or 'Adamax')")
     parser.add_argument("--initial_learning_rate",  default=1e-4,   type=float,     help="Initial learning rate.")
     parser.add_argument("--decay_rate",             default=0.5,     type=float,     help="Exponential decay rate of learning rate (1=no decay).")

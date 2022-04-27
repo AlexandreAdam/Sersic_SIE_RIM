@@ -1,8 +1,8 @@
 import tensorflow as tf
 import numpy as np
-from carrim import AnalyticalPhysicalModelv2, RIMAnalytic
+from carrim import PhysicalModel, RIM
 from carrim.definitions import DTYPE
-from carrim.models import ModelAnalytic, ModelCNNAnalytic
+from carrim.models import Model, CNN
 from carrim.utils import nullwriter
 import os, time, json
 from datetime import datetime
@@ -22,7 +22,8 @@ CNN_MODEL_HPARAMS = [
     "layer_per_level",
     "input_kernel_size",
     "filters",
-    "activation"
+    "activation",
+    "architecture"
 ]
 
 
@@ -41,7 +42,7 @@ def main(args):
             args_dict = vars(args)
             args_dict.update(json_override)
 
-    phys = AnalyticalPhysicalModelv2(
+    phys = PhysicalModel(
         pixels=args.pixels,
         image_fov=args.image_fov,
         src_fov=args.src_fov,
@@ -65,18 +66,19 @@ def main(args):
         psf_fwhm_std=args.psf_fwhm_std,
         psf_fwhm_mean=args.psf_fwhm_mean
     )
-    model = ModelAnalytic(
+    model = Model(
         units=args.units,
         activation=args.activation,
     )
-    cnn_model = ModelCNNAnalytic(
+    cnn_model = CNN(
+        architecture=args.cnn_architecture,
         levels=args.cnn_levels,
         layer_per_level=args.cnn_layer_per_level,
         input_kernel_size=args.cnn_input_kernel_size,
         filters=args.cnn_filters,
         activation=args.cnn_activation
     )
-    rim = RIMAnalytic(
+    rim = RIM(
         physical_model=phys,
         model=model,
         cnn_model=cnn_model,
@@ -146,11 +148,14 @@ def main(args):
                 hparams_dict = {key: vars(args)[key] for key in RIM_HPARAMS}
                 json.dump(hparams_dict, f, indent=4)
         ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=optim, net=rim.model)
+        cnn_ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=optim, net=rim.cnn_model)
         checkpoint_manager = tf.train.CheckpointManager(ckpt, old_checkpoints_dir, max_to_keep=args.max_to_keep)
+        cnn_checkpoint_manager = tf.train.CheckpointManager(cnn_ckpt, old_checkpoints_dir, max_to_keep=args.max_to_keep)
         save_checkpoint = True
         # ======= Load model if model_id is provided ===============================================================
         if args.model_id.lower() != "none":
             checkpoint_manager.checkpoint.restore(checkpoint_manager.latest_checkpoint)
+            cnn_checkpoint_manager.checkpoint.restore(cnn_checkpoint_manager.latest_checkpoint)
         if old_checkpoints_dir != checkpoints_dir:  # save progress in another directory.
             if args.reset_optimizer_states:
                 optim = tf.keras.optimizers.deserialize(
@@ -160,37 +165,54 @@ def main(args):
                     }
                 )
                 ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=optim, net=rim.model)
+                cnn_ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=optim, net=rim.cnn_model)
             checkpoint_manager = tf.train.CheckpointManager(ckpt, checkpoints_dir, max_to_keep=args.max_to_keep)
+            cnn_checkpoint_manager = tf.train.CheckpointManager(cnn_ckpt, checkpoints_dir, max_to_keep=args.max_to_keep)
+
     else:
         save_checkpoint = False
     # =================================================================================================================
 
     # @tf.function
     def train_step(lens, params, noise_rms, psf_fwhm):
-        with tf.GradientTape() as tape:
+        with tf.GradientTape(persistent=True) as tape:
             tape.watch(rim.model.trainable_variables)
+            tape.watch(rim.cnn_model.trainable_variables)
             y_series, chi_squared = rim.call(lens, noise_rms, psf_fwhm, outer_tape=tape)
+            # RIM gradient model cost
             # mean over params residuals in logit space
-            cost = tf.reduce_mean(tf.square(y_series - rim.inverse_link(params)), axis=2)
+            rim_cost = tf.reduce_mean(tf.square(y_series[1:] - rim.inverse_link(params)), axis=2)
             # weighted mean over time steps
-            cost = tf.reduce_sum(wt * cost, axis=0)
+            rim_cost = tf.reduce_sum(wt * rim_cost, axis=0)
             # final cost is mean over global batch size
-            cost = tf.reduce_sum(cost) / args.batch_size
-        gradient = tape.gradient(cost, rim.model.trainable_variables)
-        gradient = [tf.clip_by_norm(grad, 5.) for grad in gradient]
+            rim_cost = tf.reduce_sum(rim_cost) / args.batch_size
+            # CNN cost
+            cnn_cost = tf.reduce_mean(tf.square(y_series[0] - rim.inverse_link(params)), axis=1)
+            # final cost is mean over global batch size
+            cnn_cost = tf.reduce_sum(cnn_cost) / args.batch_size
+        # Update gradient model
+        gradient = tape.gradient(rim_cost, rim.model.trainable_variables)
+        gradient = [tf.clip_by_norm(grad, 1.) for grad in gradient]
         optim.apply_gradients(zip(gradient, rim.model.trainable_variables))
+        # Update CNN model
+        gradient = tape.gradient(cnn_cost, rim.cnn_model.trainable_variables)
+        gradient = [tf.clip_by_norm(grad, 5.) for grad in gradient]
+        optim.apply_gradients(zip(gradient, rim.cnn_model.trainable_variables))
         # Update metrics with "converged" score
         chi_squared = tf.reduce_sum(chi_squared[-1]) / args.batch_size
-        return cost, chi_squared
+        return cnn_cost, rim_cost, chi_squared
 
     # ====== Training loop ============================================================================================
-    epoch_loss = tf.metrics.Mean()
+    epoch_cnn_cost = tf.metrics.Mean()
+    epoch_rim_cost = tf.metrics.Mean()
+    epoch_cost = tf.metrics.Mean()
     time_per_step = tf.metrics.Mean()
     epoch_chi_squared = tf.metrics.Mean()
-    epoch_source_loss = tf.metrics.Mean()
     history = {  # recorded at the end of an epoch only
-        "train_cost": [],
-        "train_chi_squared": [],
+        "rim_cost": [],
+        "cnn_cost": [],
+        "cost": [],
+        "chi_squared": [],
         "learning_rate": [],
         "time_per_step": [],
         "step": [],
@@ -207,39 +229,50 @@ def main(args):
         if (time.time() - global_start) > args.max_time*3600 - estimated_time_for_epoch:
             break
         epoch_start = time.time()
-        epoch_loss.reset_states()
+        epoch_cost.reset_states()
+        epoch_cnn_cost.reset_states()
+        epoch_rim_cost.reset_states()
         epoch_chi_squared.reset_states()
-        epoch_source_loss.reset_states()
         time_per_step.reset_states()
         with writer.as_default():
             for batch in range(args.total_items // args.batch_size):
                 start = time.time()
                 lens, params, noise_rms, psf_fwhm = phys.draw_sersic_batch(args.batch_size)
-                cost, chi_squared = train_step(lens, params, noise_rms, psf_fwhm)
+                cnn_cost, rim_cost, chi_squared = train_step(lens, params, noise_rms, psf_fwhm)
         # ========== Summary and logs ==================================================================================
                 _time = time.time() - start
+                cost = cnn_cost + rim_cost
                 time_per_step.update_state([_time])
-                epoch_loss.update_state([cost])
+                epoch_cost.update_state([cost])
+                epoch_cnn_cost.update_state([cnn_cost])
+                epoch_rim_cost.update_state([rim_cost])
+
                 epoch_chi_squared.update_state([chi_squared])
                 step += 1
 
-            train_cost = epoch_loss.result().numpy()
+            cost = epoch_cost.result().numpy()
+            cnn_cost = epoch_cnn_cost.result().numpy()
+            rim_cost = epoch_rim_cost.result().numpy()
+
             train_chi_sq = epoch_chi_squared.result().numpy()
             tf.summary.scalar("Time per step", time_per_step.result(), step=step)
             tf.summary.scalar("Chi Squared", train_chi_sq, step=step)
-            tf.summary.scalar("MSE", train_cost, step=step)
+            tf.summary.scalar("RIM MSE", rim_cost, step=step)
+            tf.summary.scalar("CNN MSE", cnn_cost, step=step)
+            tf.summary.scalar("MSE", cost, step=step)
             tf.summary.scalar("Learning Rate", optim.lr(step), step=step)
-        print(f"epoch {epoch} | train loss {train_cost:.3e} "
-              f"| lr {optim.lr(step).numpy():.2e} | time per step {time_per_step.result().numpy():.2e} s"
-              f"| chi sq {train_chi_sq:.2e}")
-        history["train_cost"].append(train_cost)
+        print(f"epoch {epoch} | cost {cost:.1e} | cnn cost {cnn_cost:.1e} | rim cost {rim_cost:.1e}"
+              f"| lr {optim.lr(step).numpy():.1e} | time per step {time_per_step.result().numpy():.1e} s"
+              f"| chi sq {train_chi_sq:.1e}")
+        history["cost"].append(cost)
+        history["cnn_cost"].append(cnn_cost)
+        history["rim_cost"].append(rim_cost)
         history["learning_rate"].append(optim.lr(step).numpy())
-        history["train_chi_squared"].append(train_chi_sq)
+        history["chi_squared"].append(train_chi_sq)
         history["time_per_step"].append(time_per_step.result().numpy())
         history["step"].append(step)
         history["wall_time"].append(time.time() - global_start)
 
-        cost = train_cost
         if np.isnan(cost):
             print("Training broke the Universe")
             break
@@ -252,11 +285,13 @@ def main(args):
             out_of_time = True
         if save_checkpoint:
             checkpoint_manager.checkpoint.step.assign_add(1)  # a bit of a hack
+            cnn_checkpoint_manager.checkpoint.step.assign_add(1)  # a bit of a hack
             if epoch % args.checkpoints == 0 or patience == 0 or epoch == args.epochs - 1 or out_of_time:
                 with open(os.path.join(checkpoints_dir, "score_sheet.txt"), mode="a") as f:
                     np.savetxt(f, np.array([[lastest_checkpoint, cost]]))
                 lastest_checkpoint += 1
                 checkpoint_manager.save()
+                cnn_checkpoint_manager.save()
                 print("Saved checkpoint for step {}: {}".format(int(checkpoint_manager.checkpoint.step),
                                                                 checkpoint_manager.latest_checkpoint))
         if patience == 0:
@@ -283,11 +318,11 @@ if __name__ == "__main__":
     parser.add_argument("--adam",                   action="store_true",            help="ADAM update for the log-likelihood gradient.")
 
     # Physical parameters
-    parser.add_argument("--pixels",                 default=128,    type=int)
+    parser.add_argument("--pixels",                 default=192,    type=int)
     parser.add_argument("--image_fov",              default=7.68,   type=float)
     parser.add_argument("--src_fov",                default=3.,     type=float)
     parser.add_argument("--psf_cutout_size",        default=16,     type=int)
-    parser.add_argument("--r_ein_min",              default=0.5,    type=float)
+    parser.add_argument("--r_ein_min",              default=0.1,    type=float)
     parser.add_argument("--r_ein_max",              default=2.5,    type=float)
     parser.add_argument("--n_max",                  default=3.,     type=float)
     parser.add_argument("--n_min",                  default=1.,     type=float)
@@ -298,19 +333,21 @@ if __name__ == "__main__":
     parser.add_argument("--max_lens_shift",         default=0.3,    type=float)
     parser.add_argument("--max_source_shift",       default=0.3,    type=float)
     parser.add_argument("--noise_rms_min",          default=0.001,  type=float)
-    parser.add_argument("--noise_rms_max",          default=0.2,    type=float)
-    parser.add_argument("--noise_rms_mean",         default=0.08,   type=float)
-    parser.add_argument("--noise_rms_std",          default=0.1,    type=float)
+    parser.add_argument("--noise_rms_max",          default=0.01,    type=float)
+    parser.add_argument("--noise_rms_mean",         default=0.003,   type=float)
+    parser.add_argument("--noise_rms_std",          default=0.005,    type=float)
     parser.add_argument("--psf_fwhm_min",           default=0.06,   type=float)
     parser.add_argument("--psf_fwhm_max",           default=0.5,    type=float)
     parser.add_argument("--psf_fwhm_mean",          default=0.1,    type=float)
     parser.add_argument("--psf_fwhm_std",           default=0.1,    type=float)
 
     # Model hyperparameters
-    parser.add_argument("--units",                  default=32,    type=int)
+    parser.add_argument("--units",                  default=32,     type=int)
     parser.add_argument("--activation",             default="tanh")
 
     # CNN model hparams
+    parser.add_argument("--cnn_architecture",           default="custom", help="One of ['custom', 'perreault_levasseur2016', 'resnet50', 'resnet50V2', 'resnet101', 'resnet101V2', 'inceptionV3', 'inception_resnetV2']")
+    # ... for custom layer only
     parser.add_argument("--cnn_levels",                 default=4,      type=int)
     parser.add_argument("--cnn_layer_per_level",        default=2,      type=int)
     parser.add_argument("--cnn_input_kernel_size",      default=11,      type=int)
@@ -322,10 +359,10 @@ if __name__ == "__main__":
     parser.add_argument("--total_items",            default=10,   type=int,       help="Total images in an epoch.")
 
     # Optimization params
-    parser.add_argument("-e", "--epochs",           default=2,     type=int,       help="Number of epochs for training.")
+    parser.add_argument("-e", "--epochs",           default=100,     type=int,       help="Number of epochs for training.")
     parser.add_argument("--optimizer",              default="Adamax",               help="Class name of the optimizer (e.g. 'Adam' or 'Adamax')")
-    parser.add_argument("--initial_learning_rate",  default=1e-2,   type=float,     help="Initial learning rate.")
-    parser.add_argument("--decay_rate",             default=0.5,     type=float,     help="Exponential decay rate of learning rate (1=no decay).")
+    parser.add_argument("--initial_learning_rate",  default=1e-4,   type=float,     help="Initial learning rate.")
+    parser.add_argument("--decay_rate",             default=1,     type=float,     help="Exponential decay rate of learning rate (1=no decay).")
     parser.add_argument("--decay_steps",            default=1000,    type=int,       help="Decay steps of exponential decay of the learning rate.")
     parser.add_argument("--staircase",              action="store_true",            help="Learning rate schedule only change after decay steps if enabled.")
     parser.add_argument("--patience",               default=np.inf, type=int,       help="Number of step at which training is stopped if no improvement is recorder.")
@@ -343,7 +380,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_to_keep",             default=1,     type=int,       help="Max model checkpoint to keep.")
 
     # Reproducibility params
-    parser.add_argument("--seed",                   default=None,   type=int,       help="Random seed for numpy and tensorflow.")
+    parser.add_argument("--seed",                   default=None,     type=int,       help="Random seed for numpy and tensorflow.")
     parser.add_argument("--json_override",          default=None,   nargs="+",      help="A json filepath that will override every command line parameters. Useful for reproducibility")
 
     args = parser.parse_args()

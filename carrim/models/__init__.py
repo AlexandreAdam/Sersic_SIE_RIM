@@ -1,2 +1,2 @@
-from .rim_model_analytic import ModelAnalytic
-from .rim_cnn_model_analytic import ModelCNNAnalytic
+from .rim_model import Model
+from .cnn_model import CNN

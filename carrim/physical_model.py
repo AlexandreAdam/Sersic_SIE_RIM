@@ -4,7 +4,7 @@ import tensorflow_addons as tfa
 import tensorflow_probability as tfp
 
 
-class AnalyticalPhysicalModelv2:
+class PhysicalModel:
     """
     This model produces convolved images of SIE+Shear with a Disc+Bulge Sersic Galaxy image
     """
@@ -32,7 +32,7 @@ class AnalyticalPhysicalModelv2:
             psf_fwhm_max=0.08,
             psf_fwhm_mean=0.07,
             psf_fwhm_std=0.01,
-            sersic_i_eff=10.
+            sersic_i_eff=1.
     ):
         self.src_fov = src_fov
         self.pixels = pixels
@@ -135,7 +135,6 @@ class AnalyticalPhysicalModelv2:
         x_src_pix, y_src_pix = self.src_coord_to_pix(beta1, beta2)
         warp = tf.concat([x_src_pix, y_src_pix], axis=3)
         im = tfa.image.resampler(source, warp)  # bilinear interpolation
-        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)
         psf = self.psf_models(psf_fwhm)
         im = self.convolve_with_psf(im, psf)
         return im
@@ -155,6 +154,7 @@ class AnalyticalPhysicalModelv2:
     ):
         im = self.lens_source(source, r_ein, q, phi, x0, y0, gamma_ext, phi_ext, psf_fwhm)
         im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms)
+        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True) # normalize the data to feed in network
         return im
 
     # =============== Gaussian Source ========================
@@ -184,7 +184,6 @@ class AnalyticalPhysicalModelv2:
         beta2 = self.theta2 - alpha2 - alpha2_ext
         # sample intensity from functional form
         im = self.gaussian_source(beta1, beta2, xs, ys, qs, phi_s, w)
-        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)
         psf = self.psf_models(psf_fwhm)
         im = self.convolve_with_psf(im, psf)
         return im
@@ -208,6 +207,7 @@ class AnalyticalPhysicalModelv2:
     ):
         im = self.lens_source_gaussian_func(r_ein, q, phi, x0, y0, gamma_ext, phi_ext, xs, ys, qs, phi_s, w, psf_fwhm)
         im += tf.random.normal(shape=im.shape, mean=0., stddev=np.atleast_1d(noise_rms)[:, None, None, None])
+        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True) # normalize the data to feed in network
         return im
 
     # =============== Sersic Source ========================
@@ -237,7 +237,6 @@ class AnalyticalPhysicalModelv2:
         beta1 = self.theta1 - alpha1 - alpha1_ext
         beta2 = self.theta2 - alpha2 - alpha2_ext
         im = self.sersic_source(beta1, beta2, xs, ys, qs, phi_s, n, r_eff)
-        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)
         psf = self.psf_models(psf_fwhm)
         im = self.convolve_with_psf(im, psf)
         return im
@@ -245,13 +244,16 @@ class AnalyticalPhysicalModelv2:
     def lens_source_sersic_func_vec(self, x, psf_fwhm):
         # assume x has shape [batch_size, 13]
         r_ein, q, phi, x0, y0, gamma_ext, phi_ext, xs, ys, qs, phi_s, n, r_eff = [_x[:, None, None] for _x in tf.split(x, 13, axis=-1)]
-        alpha1, alpha2 = tf.split(self.analytical_deflection_angles(r_ein, q, phi, x0, y0), 2, axis=-1)
+        alpha1, alpha2 = tf.split(
+            tf.where(q < 0.95,
+                     self.analytical_deflection_angles(r_ein, q, phi, x0, y0),
+                     self.approximate_deflection_angles(r_ein, q, phi, x0, y0)
+        ), 2, axis=-1)
         alpha1_ext, alpha2_ext = self.external_shear_deflection(gamma_ext, phi_ext)
         # lens equation
         beta1 = self.theta1 - alpha1 - alpha1_ext
         beta2 = self.theta2 - alpha2 - alpha2_ext
         im = self.sersic_source(beta1, beta2, xs, ys, qs, phi_s, n, r_eff)
-        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)
         im = self.convolve_with_psf_vec(im, psf_fwhm)
         return im
 
@@ -275,11 +277,13 @@ class AnalyticalPhysicalModelv2:
     ):
         im = self.lens_source_sersic_func(r_ein, q, phi, x0, y0, gamma_ext, phi_ext, xs, ys, qs, phi_s, n, r_eff, psf_fwhm)
         im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms)
+        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)  # normalize the data to feed in network
         return im
 
     def noisy_lens_sersic_func_vec(self, x, noise_rms, psf_fwhm):
         im = self.lens_source_sersic_func_vec(x, psf_fwhm)
         im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms)
+        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)  # normalize the data to feed in network
         return im, noise_rms
 
     def lens_gaussian_source_func_given_alpha(
@@ -296,7 +300,6 @@ class AnalyticalPhysicalModelv2:
         beta1 = self.theta1 - alpha1
         beta2 = self.theta2 - alpha2
         im = self.gaussian_source(beta1, beta2, xs, ys, q, phi_s, w)
-        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)
         psf = self.psf_models(psf_fwhm)
         im = self.convolve_with_psf(im, psf)
         return im
@@ -335,11 +338,12 @@ class AnalyticalPhysicalModelv2:
             return varphi
 
     def approximate_deflection_angles(self, r_ein, q, phi, x0, y0):
+        b, s = self._param_conv(q, r_ein)
         # rotate to major/minor axis coordinates
         theta1, theta2 = self.rotated_and_shifted_coords(x0, y0, phi)
         denominator = (theta1 ** 2 + theta2 ** 2 / q**2 + self.s_scale ** 2) ** (1 / 2)
-        alpha1 = r_ein * theta1 / denominator
-        alpha2 = r_ein * theta2 / q / denominator
+        alpha1 = b * theta1 / denominator
+        alpha2 = b * theta2 / q / denominator
         # # rotate back to original orientation of coordinate system
         alpha1, alpha2 = self._rotate(alpha1, alpha2, -phi)
         return tf.concat([alpha1, alpha2], axis=-1)  # stack alphas into tensor of shape [batch_size, pix, pix, 2]
@@ -491,7 +495,7 @@ if __name__ == '__main__':
     # plt.imshow(psi[0, ..., 0])
     # plt.colorbar()
     # plt.show()
-    phys = AnalyticalPhysicalModelv2(
+    phys = PhysicalModel(
         pixels=128,
         image_fov=7.68,
         src_fov=3.0,
@@ -500,23 +504,33 @@ if __name__ == '__main__':
         r_ein_max=2.,
         n_min=1.,
         n_max=3.,
-        r_eff_min=0.05,
-        r_eff_max=0.3,
+        r_eff_min=0.1,
+        r_eff_max=0.8,
         max_gamma=0.1,
         max_ellipticity=0.4,
-        max_lens_shift=0.3,
-        max_source_shift=0.3,
+        max_lens_shift=0.1,
+        max_source_shift=0.1,
         noise_rms_min=0.001,
-        noise_rms_max=0.05,
-        noise_rms_mean=0.008,
-        noise_rms_std=0.008,
+        noise_rms_max=0.01,
+        noise_rms_mean=0.003,
+        noise_rms_std=0.003,
         psf_fwhm_min=0.06,
         psf_fwhm_max=0.5,
         psf_fwhm_mean=0.1,
         psf_fwhm_std=0.1
     )
+    # x = np.array([[2.5, 0.949, 0, 0, 0, 0, 0, 0, 0, 0.9, 0, 1, 0.8], [2.5, 0.951, 0, 0, 0, 0, 0, 0, 0, 0.9, 0, 1, 0.8]]).astype(np.float32)
+    # y, noise_rms = phys.noisy_lens_sersic_func_vec(x, np.array([0.01, 0.01]).astype(np.float32), np.array([0.06, 0.06]).astype(np.float32))
+    # plt.imshow(y[1, ..., 0], cmap="hot")
+    # plt.colorbar()
+    # # plt.show()
+    # plt.figure()
+    # plt.imshow(y[0, ..., 0], cmap="hot")
+    # plt.colorbar()
+    # plt.show()
     for i in range(10):
         lens, x, noise_rms, psf_fwhm = phys.draw_sersic_batch(1)
+        print(noise_rms)
         print(x)
         print(lens.numpy().max())
         plt.imshow(lens[0, ..., 0], cmap="hot")

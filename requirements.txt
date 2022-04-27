@@ -1,5 +1,5 @@
-tensorflow==2.4.1
-git+https://github.com/justinalsing/pydelfi.git@tf2-tom
+tensorflow==2.8
+#git+https://github.com/justinalsing/pydelfi.git@tf2-tom
 tensorflow_addons
 matplotlib
 astropy

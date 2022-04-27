@@ -12,6 +12,7 @@ source $HOME/environments/carrim/bin/activate
 python $ARIM/pretrain_cnn_gridsearch.py\
   --n_models=100\
   --strategy=uniform\
+  --cnn_architecture custom perreault_levasseur2016 resnet50 resnet101 InceptionV3\
   --cnn_levels 3 4\
   --cnn_layer_per_level 1 2\
   --cnn_input_kernel_size 7 11\
