@@ -15,7 +15,7 @@ python $ARIM/rim_gridsearch.py\
   --steps 4 8 12\
   --adam 0 1\
   --units 16 32 64\
-  --cnn_architecture custom perreault_levasseur2016 resnet50 resnet101 InceptionV3\
+  --cnn_architecture custom perreault_levasseur2016 resnet50 resnet101 inceptionV3\
   --cnn_levels 3 4\
   --cnn_layer_per_level 1 2\
   --cnn_input_kernel_size 7 11\

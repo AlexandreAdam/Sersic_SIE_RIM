@@ -282,7 +282,7 @@ class PhysicalModel:
 
     def noisy_lens_sersic_func_vec(self, x, noise_rms, psf_fwhm):
         im = self.lens_source_sersic_func_vec(x, psf_fwhm)
-        im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms)
+        im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms[:, None, None, None])
         im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)  # normalize the data to feed in network
         return im, noise_rms
 
@@ -507,7 +507,7 @@ if __name__ == '__main__':
         r_eff_min=0.1,
         r_eff_max=0.8,
         max_gamma=0.1,
-        max_ellipticity=0.4,
+        max_ellipticity=0.01,
         max_lens_shift=0.1,
         max_source_shift=0.1,
         noise_rms_min=0.001,

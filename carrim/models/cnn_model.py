@@ -96,8 +96,8 @@ class CNN(tf.keras.Model):
 if __name__ == '__main__':
     y = tf.random.normal(shape=[1, 192, 192, 1])
     # model = CNN(architecture="perreault_levasseur2016")
-    # model = CNN(architecture="resnet101V2")
-    model = CNN(architecture="custom", levels=5, layer_per_level=2, filters=128)
+    model = CNN(architecture="resnet101")
+    # model = CNN(architecture="custom", levels=5, layer_per_level=2, filters=128)
 
     print(model.call(y))
     import numpy as np
