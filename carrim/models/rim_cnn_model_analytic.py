@@ -17,7 +17,7 @@ class ModelCNNAnalytic(tf.keras.Model):
             filters=32,
             filter_scaling=1,
             filter_cap=1024,
-            activation="tanh"
+            activation="relu"
         ):
 
         super(ModelCNNAnalytic, self).__init__()
@@ -37,7 +37,7 @@ class ModelCNNAnalytic(tf.keras.Model):
                     padding="same",
                     activation=activation
                 )
-            for j in range(layer_per_level)]
+            for _ in range(layer_per_level)]
             )
             self._feature_layers.append(
                 tf.keras.layers.Conv2D(

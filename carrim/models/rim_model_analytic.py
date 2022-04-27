@@ -25,17 +25,13 @@ class ModelAnalytic(tf.keras.Model):
 
     def call(self, xt, states):
         ht1, ht2 = states
-        dxt = tf.identity(xt)
-        for layer in self._feature_layers:
-            dxt = layer(dxt)
-        dxt, new_ht1 = self.gru(dxt, ht1)
+        dxt = self.input_layer(xt)
+        dxt, new_ht1 = self.gru1(dxt, ht1)
         dxt = self.hidden_layer(dxt)
-        dxt, new_ht2 = self.gru(dxt, ht2)
-        for layer in self._reconstruction_layers:
-            dxt = layer(dxt)
+        dxt, new_ht2 = self.gru2(dxt, ht2)
         dxt = self.output_layer(dxt)
-        return dxt, new_state
+        return dxt, (new_ht1, new_ht2)
 
     def init_hidden_states(self, batch_size):
-        return tf.zeros(shape=(batch_size, self.hidden_units))
+        return (tf.zeros(shape=(batch_size, self.hidden_units)), tf.zeros(shape=(batch_size, self.hidden_units)))
 

@@ -1,13 +1,9 @@
 import tensorflow as tf
 import numpy as np
-from astropy import units as u
-from astropy.constants import G, c
-from astropy.cosmology import Planck18 as cosmo
 import tensorflow_probability as tfp
 from scipy.special import exp1
 from numpy import euler_gamma
 
-COSMO = cosmo
 DTYPE = tf.float32
 LOG10 = tf.constant(np.log(10.), DTYPE)
 LOGFLOOR = tf.constant(1e-6, DTYPE)
@@ -87,22 +83,6 @@ def xsquared(x):
 
 def log_10(x):
     return tf.math.log(x) / LOG10
-
-
-def kappa_clipped_exponential(log_kappa):
-    # log_kappa = tf.clip_by_value(log_kappa, clip_value_min=KAPPA_LOG_MIN, clip_value_max=KAPPA_LOG_MAX)
-    # clip values of log_kappa in a certain range. Make sure sure it is differentiable
-    log_kappa = (log_kappa - KAPPA_LOG_MIN) * 4 / (KAPPA_LOG_MAX - KAPPA_LOG_MIN) - 2  # rescale between -2 and 2 for tanh
-    log_kappa = (tf.math.tanh(log_kappa) + 1) * (KAPPA_LOG_MAX - KAPPA_LOG_MIN) / 2 + KAPPA_LOG_MIN  # rescale output of tanh to wanted range
-    return 10**log_kappa
-
-
-# Box-Cox transformation -> LAMBDA should be negative but small. 1/2 is a good choice
-def logkappa_normalization(x, forward=True):
-    if forward:
-        return (x**LAMBDA - 3)/LAMBDA
-    else:
-        return tf.math.exp(tf.math.log(LAMBDA * x + 3) / LAMBDA)
 
 
 def lrelu4p(x, alpha=0.04):

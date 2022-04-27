@@ -135,6 +135,7 @@ class AnalyticalPhysicalModelv2:
         x_src_pix, y_src_pix = self.src_coord_to_pix(beta1, beta2)
         warp = tf.concat([x_src_pix, y_src_pix], axis=3)
         im = tfa.image.resampler(source, warp)  # bilinear interpolation
+        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)
         psf = self.psf_models(psf_fwhm)
         im = self.convolve_with_psf(im, psf)
         return im
@@ -153,8 +154,7 @@ class AnalyticalPhysicalModelv2:
             phi_ext: float = 0.05,
     ):
         im = self.lens_source(source, r_ein, q, phi, x0, y0, gamma_ext, phi_ext, psf_fwhm)
-        peak = tf.reduce_max(im)
-        im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms * peak)
+        im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms)
         return im
 
     # =============== Gaussian Source ========================
@@ -184,6 +184,7 @@ class AnalyticalPhysicalModelv2:
         beta2 = self.theta2 - alpha2 - alpha2_ext
         # sample intensity from functional form
         im = self.gaussian_source(beta1, beta2, xs, ys, qs, phi_s, w)
+        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)
         psf = self.psf_models(psf_fwhm)
         im = self.convolve_with_psf(im, psf)
         return im
@@ -236,6 +237,7 @@ class AnalyticalPhysicalModelv2:
         beta1 = self.theta1 - alpha1 - alpha1_ext
         beta2 = self.theta2 - alpha2 - alpha2_ext
         im = self.sersic_source(beta1, beta2, xs, ys, qs, phi_s, n, r_eff)
+        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)
         psf = self.psf_models(psf_fwhm)
         im = self.convolve_with_psf(im, psf)
         return im
@@ -249,6 +251,7 @@ class AnalyticalPhysicalModelv2:
         beta1 = self.theta1 - alpha1 - alpha1_ext
         beta2 = self.theta2 - alpha2 - alpha2_ext
         im = self.sersic_source(beta1, beta2, xs, ys, qs, phi_s, n, r_eff)
+        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)
         im = self.convolve_with_psf_vec(im, psf_fwhm)
         return im
 
@@ -271,14 +274,11 @@ class AnalyticalPhysicalModelv2:
             psf_fwhm: float = 0.05
     ):
         im = self.lens_source_sersic_func(r_ein, q, phi, x0, y0, gamma_ext, phi_ext, xs, ys, qs, phi_s, n, r_eff, psf_fwhm)
-        peaks = tf.reduce_max(im, axis=(1, 2, 3), keepdims=True)
-        im += tf.random.normal(shape=im.shape, mean=0., stddev=np.atleast_1d(noise_rms)[:, None, None, None] * peaks)
+        im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms)
         return im
 
     def noisy_lens_sersic_func_vec(self, x, noise_rms, psf_fwhm):
         im = self.lens_source_sersic_func_vec(x, psf_fwhm)
-        peaks = tf.reduce_max(im, axis=(1, 2, 3))
-        noise_rms = noise_rms * peaks
         im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms)
         return im, noise_rms
 
@@ -296,6 +296,7 @@ class AnalyticalPhysicalModelv2:
         beta1 = self.theta1 - alpha1
         beta2 = self.theta2 - alpha2
         im = self.gaussian_source(beta1, beta2, xs, ys, q, phi_s, w)
+        im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)
         psf = self.psf_models(psf_fwhm)
         im = self.convolve_with_psf(im, psf)
         return im
