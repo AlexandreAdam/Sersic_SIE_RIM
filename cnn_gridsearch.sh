@@ -18,7 +18,7 @@ python $ARIM/pretrain_cnn_gridsearch.py\
   --cnn_filters 16 32\
   --cnn_activation relu tanh swish\
   --batch_size 1 16 32 64 128\
-  --total_items 2\
+  --total_items 200000\
   --epochs 100\
   --optimizer adamax\
   --initial_learning_rate 1e-3 1e-4\
