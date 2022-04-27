@@ -8,8 +8,8 @@
 #SBATCH --account=rrg-lplevass
 #SBATCH --job-name=Train_RIM_analytic_Gridsearch
 #SBATCH --output=%x-%j.out
-#source $HOME/environments/carrim/bin/activate
-python pretrain_cnn_gridsearch.py\
+source $HOME/environments/carrim/bin/activate
+python $ARIM/pretrain_cnn_gridsearch.py\
   --n_models=100\
   --strategy=uniform\
   --cnn_levels 3 4\
@@ -27,7 +27,7 @@ python pretrain_cnn_gridsearch.py\
   --max_time 9.5\
   --checkpoints=10\
   --max_to_keep=1\
-  --model_dir=models/\
-  --logdir=logsA/\
+  --model_dir=$ARIM/models/\
+  --logdir=$ARIM/logsA/\
   --logname_prefixe=CNN_g1\
   --seed 42
