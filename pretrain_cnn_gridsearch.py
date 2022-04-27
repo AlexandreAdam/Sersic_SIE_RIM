@@ -17,12 +17,12 @@ DATE = datetime.now().strftime("%y%m%d%H%M%S")
 
 
 CNN_MODEL_HPARAMS = [
+    "cnn_architecture",
     "cnn_levels",
     "cnn_layer_per_level",
     "cnn_input_kernel_size",
     "cnn_filters",
     "cnn_activation",
-    "cnn_architecture"
 ]
 
 EXTRA_PARAMS = [
@@ -87,8 +87,16 @@ def uniform_grid_search(args):
                 if len(args_dict[p]) > 1:
                     # this way, numpy does not cast int to int64 or float to float32
                     args_dict[p] = args_dict[p][np.random.choice(range(len(args_dict[p])))]
-                    nicknames.append(PARAMS_NICKNAME[p])
-                    params.append(args_dict[p])
+                    if "cnn" in p:
+                        if p == "cnn_architecture":
+                            nicknames.append(PARAMS_NICKNAME[p])
+                            params.append(args_dict[p])
+                        elif args_dict["cnn_architecture"] == "custom":
+                            nicknames.append(PARAMS_NICKNAME[p])
+                            params.append(args_dict[p])
+                    else:
+                        nicknames.append(PARAMS_NICKNAME[p])
+                        params.append(args_dict[p])
                 else:
                     args_dict[p] = args_dict[p][0]
         param_str = "_" + "_".join([f"{nickname}{param}" for nickname, param in zip(nicknames, params)])
@@ -120,8 +128,16 @@ def exhaustive_grid_search(args):
                 if len(args_dict[p]) > 1:
                     args_dict[p] = lex[i]
                     i += 1
-                    nicknames.append(PARAMS_NICKNAME[p])
-                    params.append(args_dict[p])
+                    if "cnn" in p:
+                        if p == "cnn_architecture":
+                            nicknames.append(PARAMS_NICKNAME[p])
+                            params.append(args_dict[p])
+                        elif args_dict["cnn_architecture"] == "custom":
+                            nicknames.append(PARAMS_NICKNAME[p])
+                            params.append(args_dict[p])
+                    else:
+                        nicknames.append(PARAMS_NICKNAME[p])
+                        params.append(args_dict[p])
                 else:
                     args_dict[p] = args_dict[p][0]
         param_str = "_" + "_".join([f"{nickname}{param}" for nickname, param in zip(nicknames, params)])
