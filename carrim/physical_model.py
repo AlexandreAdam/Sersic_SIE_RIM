@@ -417,7 +417,6 @@ class PhysicalModel:
         e1 = tf.tanh(e1) * self.max_ellipticity / SQRT2
         e2 = (tf.tanh(e2) + 1)/ 2 * self.max_ellipticity / SQRT2
         q, phi = self._ellipticity_to_qphi(e1, e2)
-        q = q - tf.nn.relu(q - 0.95)
         gamma, gamma_phi = self._shear_cartesian_to_polar(gamma1, gamma2)
         e1s = tf.tanh(e1s) * self.max_ellipticity / SQRT2
         e2s = (tf.tanh(e2s) + 1)/ 2 * self.max_ellipticity / SQRT2
@@ -430,9 +429,17 @@ class PhysicalModel:
     def physical_to_model(self, z):
         # method used to compute model loss in logit space
         r_ein, q, phi, x0, y0, gamma, gamma_phi, xs, ys, qs, phi_s, n, r_eff = tf.split(z, 13, axis=-1)
+        # 0.95 avoids singularity of atanh at -1 and 1.
+        r_ein = tf.math.atanh(0.95 * (2 * (r_ein - self.r_ein_min) / (self.r_ein_max - self.r_ein_min) - 1.))
         e1, e2 = self._qphi_to_ellipticity(q, phi)
+        e1 = tf.math.atanh(0.95 * e1 / self.max_ellipticity * SQRT2)
+        e2 = tf.math.atanh(0.95 * (2 * e2 / self.max_ellipticity * SQRT2 - 1))
         gamma1, gamma2 = self._shear_polar_to_cartesian(gamma, gamma_phi)
         e1s, e2s = self._qphi_to_ellipticity(qs, phi_s)
+        e1s = tf.math.atanh(0.95 * e1s / self.max_ellipticity * SQRT2)
+        e2s = tf.math.atanh(0.95 * (2 * e2s / self.max_ellipticity * SQRT2 - 1))
+        n = tf.math.atanh(0.95 * (2 * (n - self.n_min) / (self.n_max - self.n_min) - 1.))
+        r_eff = tf.math.atanh(0.95 * (2 * (r_eff - self.r_eff_min)/ (self.r_eff_max - self.r_eff_min) - 1.))
         x = tf.concat([r_ein, e1, e2, x0, y0, gamma1, gamma2, xs, ys, e1s, e2s, n, r_eff], axis=-1)
         return x
 

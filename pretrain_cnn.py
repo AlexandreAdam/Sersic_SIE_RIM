@@ -181,7 +181,7 @@ def main(args):
                 cost = train_step(lens, params)
         # ========== Summary and logs ==================================================================================
                 _time = time.time() - start
-                time_per_step.update_state([_time])
+                time_per_step.update_state([_time / args.batch_size])
                 epoch_loss.update_state([cost])
                 step += 1
 

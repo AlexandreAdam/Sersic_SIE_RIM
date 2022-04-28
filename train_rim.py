@@ -242,7 +242,7 @@ def main(args):
         # ========== Summary and logs ==================================================================================
                 _time = time.time() - start
                 cost = cnn_cost + rim_cost
-                time_per_step.update_state([_time])
+                time_per_step.update_state([_time / args.batch_size])
                 epoch_cost.update_state([cost])
                 epoch_cnn_cost.update_state([cnn_cost])
                 epoch_rim_cost.update_state([rim_cost])
