@@ -76,8 +76,9 @@ class RIM:
                     g.watch(xt)
                     zt = self.link(xt)
                     y_pred = self.physical_model.lens_source_sersic_func_vec(zt, psf_fwhm)
-                    lam = tf.reduce_sum(lensed_image * y_pred, axis=(1, 2, 3), keepdims=True) / tf.reduce_sum(lensed_image**2, axis=(1, 2, 3), keepdims=True)
-                    log_likelihood = 0.5 * tf.reduce_sum(tf.square(lam * lensed_image - y_pred) / noise_rms[:, None, None, None]**2, axis=(1, 2, 3))
+                    with g.stop_recording():
+                        lam = tf.maximum(tf.reduce_sum(lensed_image * y_pred, axis=(1, 2, 3), keepdims=True) / tf.reduce_sum(y_pred**2, axis=(1, 2, 3), keepdims=True), 0.1)
+                    log_likelihood = 0.5 * tf.reduce_sum(tf.square(lensed_image - lam * y_pred) / noise_rms[:, None, None, None]**2, axis=(1, 2, 3))
             grad = g.gradient(log_likelihood, xt)
             grad = self.grad_update(grad, current_step)
             xt, states = self.time_step(xt, grad, states)

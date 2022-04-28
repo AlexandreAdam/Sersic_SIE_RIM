@@ -22,7 +22,7 @@ python $ARIM/pretrain_cnn_gridsearch.py\
   --total_items 20000\
   --epochs 1000\
   --optimizer adamax\
-  --initial_learning_rate 1e-3 1e-4\
+  --initial_learning_rate 1e-4 1e-5 1e-6\
   --decay_rate 1 0.9 0.8\
   --decay_steps 10000\
   --max_time 23.5\

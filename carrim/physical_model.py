@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import tensorflow_addons as tfa
 import tensorflow_probability as tfp
+from carrim.definitions import SQRT2
 
 
 class PhysicalModel:
@@ -15,7 +16,7 @@ class PhysicalModel:
             src_fov=3.0,
             psf_cutout_size=16,
             r_ein_min=0.5,
-            r_ein_max=2.,
+            r_ein_max=2.5,
             n_min=1.,
             n_max=3.,
             r_eff_min=0.2,
@@ -276,14 +277,14 @@ class PhysicalModel:
             psf_fwhm: float = 0.05
     ):
         im = self.lens_source_sersic_func(r_ein, q, phi, x0, y0, gamma_ext, phi_ext, xs, ys, qs, phi_s, n, r_eff, psf_fwhm)
-        im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms)
         im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)  # normalize the data to feed in network
-        return im
+        im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms)
+        return im, noise_rms
 
     def noisy_lens_sersic_func_vec(self, x, noise_rms, psf_fwhm):
         im = self.lens_source_sersic_func_vec(x, psf_fwhm)
-        im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms[:, None, None, None])
         im /= tf.reduce_max(im, axis=[1, 2, 3], keepdims=True)  # normalize the data to feed in network
+        im += tf.random.normal(shape=im.shape, mean=0., stddev=noise_rms[:, None, None, None])
         return im, noise_rms
 
     def lens_gaussian_source_func_given_alpha(
@@ -410,12 +411,19 @@ class PhysicalModel:
     def model_to_physical(self, x):
         # Method used to compute likelihood given model predictions
         r_ein, e1, e2, x0, y0, gamma1, gamma2, xs, ys, e1s, e2s, n, r_eff = tf.split(x, 13, axis=-1)
+        # avoids predicting negative einstein radius
+        r_ein = (self.r_ein_max - self.r_ein_min) * (tf.tanh(r_ein) + 1.)/2 + self.r_ein_min
+        # Must restrain ellipticity to prior for numerical stability
+        e1 = tf.tanh(e1) * self.max_ellipticity / SQRT2
+        e2 = (tf.tanh(e2) + 1)/ 2 * self.max_ellipticity / SQRT2
         q, phi = self._ellipticity_to_qphi(e1, e2)
         q = q - tf.nn.relu(q - 0.95)
         gamma, gamma_phi = self._shear_cartesian_to_polar(gamma1, gamma2)
+        e1s = tf.tanh(e1s) * self.max_ellipticity / SQRT2
+        e2s = (tf.tanh(e2s) + 1)/ 2 * self.max_ellipticity / SQRT2
         qs, phi_s = self._ellipticity_to_qphi(e1s, e2s)
-        n = tf.nn.relu(n) + 0.5 # prevents explosion at n = 0
-        r_eff = tf.nn.relu(r_eff) + self.src_fov / self.pixels
+        n = (self.n_max - self.n_min) * (tf.tanh(n) + 1.)/2 + self.n_min
+        r_eff = (self.r_eff_max - self.r_eff_min) * (tf.tanh(r_eff) + 1.)/2 + self.r_eff_min
         z = tf.concat([r_ein, q, phi, x0, y0, gamma, gamma_phi, xs, ys, qs, phi_s, n, r_eff], axis=1)
         return z
 
@@ -463,8 +471,8 @@ class PhysicalModel:
 
     def draw_sersic_batch(self, batch_size):
         r_ein = tf.random.uniform(shape=(batch_size, 1), minval=self.r_ein_min, maxval=self.r_ein_max)
-        e1 = tf.random.uniform(shape=(batch_size, 1), minval=-self.max_ellipticity, maxval=self.max_ellipticity)
-        e2 = tf.random.uniform(shape=(batch_size, 1), minval=0, maxval=self.max_ellipticity)
+        e1 = tf.random.uniform(shape=(batch_size, 1), minval=-self.max_ellipticity/SQRT2, maxval=self.max_ellipticity/SQRT2)
+        e2 = tf.random.uniform(shape=(batch_size, 1), minval=0, maxval=self.max_ellipticity/SQRT2)
         q, phi = self._ellipticity_to_qphi(e1, e2)
         x0 = tf.random.uniform(shape=(batch_size, 1), minval=-self.max_lens_shift, maxval=self.max_lens_shift)
         y0 = tf.random.uniform(shape=(batch_size, 1), minval=-self.max_lens_shift, maxval=self.max_lens_shift)
@@ -473,8 +481,8 @@ class PhysicalModel:
         gamma, gamma_phi = self._shear_cartesian_to_polar(gamma1, gamma2)
         xs = tf.random.uniform(shape=(batch_size, 1), minval=-self.max_source_shift, maxval=self.max_source_shift)
         ys = tf.random.uniform(shape=(batch_size, 1), minval=-self.max_source_shift, maxval=self.max_source_shift)
-        e1s = tf.random.uniform(shape=(batch_size, 1), minval=-self.max_ellipticity, maxval=self.max_ellipticity)
-        e2s = tf.random.uniform(shape=(batch_size, 1), minval=0, maxval=self.max_ellipticity)
+        e1s = tf.random.uniform(shape=(batch_size, 1), minval=-self.max_ellipticity/SQRT2, maxval=self.max_ellipticity/SQRT2)
+        e2s = tf.random.uniform(shape=(batch_size, 1), minval=0, maxval=self.max_ellipticity/SQRT2)
         qs, phi_s = self._ellipticity_to_qphi(e1s, e2s)
         n = tf.random.uniform(shape=(batch_size, 1), minval=self.n_min, maxval=self.n_max)
         r_eff = tf.random.uniform(shape=(batch_size, 1), minval=self.r_eff_min, maxval=self.r_eff_max)
@@ -501,29 +509,43 @@ if __name__ == '__main__':
         src_fov=3.0,
         psf_cutout_size=16,
         r_ein_min=0.5,
-        r_ein_max=2.,
-        n_min=1.,
+        r_ein_max=2.5,
+        n_min=0.5,
         n_max=3.,
         r_eff_min=0.1,
         r_eff_max=0.8,
-        max_gamma=0.1,
-        max_ellipticity=0.01,
-        max_lens_shift=0.1,
-        max_source_shift=0.1,
-        noise_rms_min=0.001,
-        noise_rms_max=0.01,
-        noise_rms_mean=0.003,
-        noise_rms_std=0.003,
+        max_gamma=0.01,
+        max_ellipticity=0.6,
+        max_lens_shift=0.2,
+        max_source_shift=0.2,
+        noise_rms_min=0.01,
+        noise_rms_max=0.1,
+        noise_rms_mean=0.05,
+        noise_rms_std=0.05,
         psf_fwhm_min=0.06,
         psf_fwhm_max=0.5,
         psf_fwhm_mean=0.1,
         psf_fwhm_std=0.1
     )
+    # x = np.array([[-9.6220367e-02, -3.0430828e-04,  1.1140414e+00, -3.9493221e-01,
+    #     -1.4332834e-01,  1.3513198e+00,  1.1840323e+00,  6.7073107e-01,
+    #     4.4728357e-01,  1.6539308e-01, -8.0586088e-01,  8.6084443e-01,
+    #     9.3750000e-02]]).astype(np.float32)
+    # x = np.array([[0.5040976,   0.6890068,   0.9750554, - 0.12388847, - 0.12027474,  0.22973548,
+    #  0.7929421,   0.27120197, - 0.15079543,  0.0884554,   0.5401046,   0.5,
+    #  0.09375]]).astype(np.float32)
+    x = np.array([[
+        0.49982038,  0.8755036,  0.5951605,   0.08907012,  0.1419889,   0.23883332,
+         0.9600224, - 0.11219557, - 0.29935837,  0.423807,  0.83615714,  0.5,
+         0.09375
+    ]]).astype(np.float32)
+    # r_ein, q, phi, x0, y0, gamma, gamma_phi, xs, ys, qs, phi_s, n, r_eff
     # x = np.array([[2.5, 0.949, 0, 0, 0, 0, 0, 0, 0, 0.9, 0, 1, 0.8], [2.5, 0.951, 0, 0, 0, 0, 0, 0, 0, 0.9, 0, 1, 0.8]]).astype(np.float32)
-    # y, noise_rms = phys.noisy_lens_sersic_func_vec(x, np.array([0.01, 0.01]).astype(np.float32), np.array([0.06, 0.06]).astype(np.float32))
+    # y, noise_rms = phys.noisy_lens_sersic_func_vec(x, np.array([0.01]).astype(np.float32), np.array([0.06]).astype(np.float32))
+    # y = phys.lens_source_sersic_func_vec(x, np.array([0.01]).astype(np.float32))
     # plt.imshow(y[1, ..., 0], cmap="hot")
     # plt.colorbar()
-    # # plt.show()
+    # plt.show()
     # plt.figure()
     # plt.imshow(y[0, ..., 0], cmap="hot")
     # plt.colorbar()
@@ -536,4 +558,25 @@ if __name__ == '__main__':
         plt.imshow(lens[0, ..., 0], cmap="hot")
         plt.colorbar()
         plt.show()
-
+    # x = np.array([[
+    #     0.49982038,  0.8755036,  0.5951605,   0.08907012,  0.1419889,   0.23883332,
+    #      0.9600224, - 0.11219557, - 0.29935837,  0.423807,  0.83615714,  0.5,
+    #      0.09375
+    # ]]).astype(np.float32)
+    # y, noise_rms = phys.noisy_lens_sersic_func_vec(x, np.array([0.01]).astype(np.float32), np.array([0.06]).astype(np.float32))
+    # y_pred = phys.lens_source_sersic_func_vec(x, np.array([0.01]).astype(np.float32))
+    # lam = tf.maximum(tf.reduce_sum(y * y_pred, axis=(1, 2, 3), keepdims=True) / tf.reduce_sum(y_pred ** 2, axis=(1, 2, 3),
+    #                                                                                         keepdims=True), 0.1)
+    # print(lam)
+    # print(noise_rms)
+    # log_likelihood = 0.5 * tf.reduce_sum(tf.square(y - lam * y_pred) / noise_rms[:, None, None, None] ** 2, axis=(1, 2, 3))
+    # print(log_likelihood * 2 / 128**2)
+    # plt.imshow((lam * y_pred)[0, ..., 0], cmap="hot")
+    # plt.colorbar()
+    # plt.figure()
+    # plt.imshow(y[0, ..., 0], cmap="hot")
+    # plt.colorbar()
+    # plt.figure()
+    # plt.imshow(((lam * y_pred)[0, ..., 0] - y[0, ..., 0]) / noise_rms, cmap="seismic", vmin=-5, vmax=5)
+    # plt.colorbar()
+    # plt.show()

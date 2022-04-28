@@ -13,7 +13,7 @@ python $ARIM/rim_gridsearch.py\
   --n_models=100\
   --strategy=uniform\
   --steps 4 8 12\
-  --adam 0 1\
+  --adam 1\
   --units 16 32 64\
   --cnn_architecture custom perreault_levasseur2016 resnet50 resnet101 inceptionV3\
   --cnn_levels 3 4\
@@ -26,7 +26,7 @@ python $ARIM/rim_gridsearch.py\
   --total_items 20000\
   --epochs 1000\
   --optimizer adamax\
-  --initial_learning_rate 1e-3 1e-4\
+  --initial_learning_rate 1e-4 1e-5 1e-6\
   --decay_rate 1 0.9 0.8\
   --decay_steps 10000\
   --max_time 23.5\

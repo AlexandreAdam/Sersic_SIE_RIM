@@ -6,6 +6,7 @@ from numpy import euler_gamma
 
 DTYPE = tf.float32
 LOG10 = tf.constant(np.log(10.), DTYPE)
+SQRT2 = tf.constant(1.41421356, DTYPE)
 LOGFLOOR = tf.constant(1e-6, DTYPE)
 
 SIGMOID_MIN = tf.constant(1e-3, DTYPE)
