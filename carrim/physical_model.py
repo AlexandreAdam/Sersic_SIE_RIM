@@ -398,14 +398,14 @@ class PhysicalModel:
 
     @staticmethod
     def _shear_polar_to_cartesian(r, phi):
-        x = r * tf.math.cos(2 * phi)
-        y = r * tf.math.sin(2 * phi)
+        x = r * tf.math.cos(phi)
+        y = r * tf.math.sin(phi)
         return x, y
 
     @staticmethod
     def _shear_cartesian_to_polar(x, y):
         r = tf.sqrt(x**2 + y**2)
-        phi = tf.math.atan2(y, x)/2
+        phi = tf.math.atan2(y, x)
         return r, phi
 
     def model_to_physical(self, x):
