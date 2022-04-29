@@ -391,7 +391,7 @@ class PhysicalModel:
 
     @staticmethod
     def _ellipticity_to_qphi(e1, e2):
-        phi = tf.atan2(e2, e1)/2
+        phi = tf.atan2(e2, e1)
         c = tf.sqrt(e1 ** 2 + e2 ** 2)
         q = (1 - c) / (1 + c)
         return q, phi

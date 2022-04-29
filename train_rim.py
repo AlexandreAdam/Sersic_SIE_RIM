@@ -174,11 +174,11 @@ def main(args):
     # =================================================================================================================
 
     # @tf.function
-    def train_step(lens, params, noise_rms, psf_fwhm):
+    def train_step(observation, params, noise_rms, psf_fwhm):
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(rim.model.trainable_variables)
             tape.watch(rim.cnn_model.trainable_variables)
-            y_series, chi_squared = rim.call(lens, noise_rms, psf_fwhm, outer_tape=tape)
+            y_series, chi_squared = rim.call(observation, noise_rms, psf_fwhm, outer_tape=tape)
             # RIM gradient model cost
             # mean over params residuals in logit space
             rim_cost = tf.reduce_mean(tf.square(y_series[1:] - rim.inverse_link(params)), axis=2)
@@ -237,8 +237,8 @@ def main(args):
         with writer.as_default():
             for batch in range(args.total_items // args.batch_size):
                 start = time.time()
-                lens, params, noise_rms, psf_fwhm = phys.draw_sersic_batch(args.batch_size)
-                cnn_cost, rim_cost, chi_squared = train_step(lens, params, noise_rms, psf_fwhm)
+                observation, params, noise_rms, psf_fwhm = phys.draw_sersic_batch(args.batch_size)
+                cnn_cost, rim_cost, chi_squared = train_step(observation, params, noise_rms, psf_fwhm)
         # ========== Summary and logs ==================================================================================
                 _time = time.time() - start
                 cost = cnn_cost + rim_cost
