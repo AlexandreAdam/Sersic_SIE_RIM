@@ -385,8 +385,8 @@ class PhysicalModel:
 
     @staticmethod
     def _qphi_to_ellipticity(q, phi):
-        e1 = (1. - q) / (1. + q) * tf.cos(2 * phi)
-        e2 = (1. - q) / (1. + q) * tf.sin(2 * phi)
+        e1 = (1. - q) / (1. + q) * tf.cos(phi)
+        e2 = (1. - q) / (1. + q) * tf.sin(phi)
         return e1, e2
 
     @staticmethod
