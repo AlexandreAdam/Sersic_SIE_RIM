@@ -7,7 +7,7 @@ from carrim.definitions import SQRT2
 
 class PhysicalModel:
     """
-    This model produces convolved images of SIE+Shear with a Disc+Bulge Sersic Galaxy image
+    This model produces convolved images of SIE+Shear with a Sersic Galaxy image
     """
     def __init__(
             self,
@@ -385,6 +385,7 @@ class PhysicalModel:
 
     @staticmethod
     def _qphi_to_ellipticity(q, phi):
+        # Phi should be between 0 and pi
         e1 = (1. - q) / (1. + q) * tf.cos(phi)
         e2 = (1. - q) / (1. + q) * tf.sin(phi)
         return e1, e2
@@ -398,6 +399,7 @@ class PhysicalModel:
 
     @staticmethod
     def _shear_polar_to_cartesian(r, phi):
+        # Phi should be between 0 and pi
         x = r * tf.math.cos(phi)
         y = r * tf.math.sin(phi)
         return x, y
