@@ -136,6 +136,8 @@ def main(args):
         old_checkpoints_dir = os.path.join(args.model_dir, model_id)  # in case they differ we load model from a different directory
         if not os.path.isdir(checkpoints_dir):
             os.mkdir(checkpoints_dir)
+            os.mkdir(os.path.join(checkpoints_dir, "cnn"))
+            os.mkdir(os.path.join(checkpoints_dir, "rim"))
             with open(os.path.join(checkpoints_dir, "script_params.json"), "w") as f:
                 json.dump(vars(args), f, indent=4)
             with open(os.path.join(checkpoints_dir, "model_hparams.json"), "w") as f:
@@ -147,10 +149,11 @@ def main(args):
             with open(os.path.join(checkpoints_dir, "rim_hparams.json"), "w") as f:
                 hparams_dict = {key: vars(args)[key] for key in RIM_HPARAMS}
                 json.dump(hparams_dict, f, indent=4)
+
         ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=optim, net=rim.model)
         cnn_ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=optim, net=rim.cnn_model)
-        checkpoint_manager = tf.train.CheckpointManager(ckpt, old_checkpoints_dir, max_to_keep=args.max_to_keep)
-        cnn_checkpoint_manager = tf.train.CheckpointManager(cnn_ckpt, old_checkpoints_dir, max_to_keep=args.max_to_keep)
+        checkpoint_manager = tf.train.CheckpointManager(ckpt, os.path.join(old_checkpoints_dir, "rim"), max_to_keep=args.max_to_keep)
+        cnn_checkpoint_manager = tf.train.CheckpointManager(cnn_ckpt, os.path.join(old_checkpoints_dir, "cnn"), max_to_keep=args.max_to_keep)
         save_checkpoint = True
         # ======= Load model if model_id is provided ===============================================================
         if args.model_id.lower() != "none":
@@ -166,8 +169,8 @@ def main(args):
                 )
                 ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=optim, net=rim.model)
                 cnn_ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=optim, net=rim.cnn_model)
-            checkpoint_manager = tf.train.CheckpointManager(ckpt, checkpoints_dir, max_to_keep=args.max_to_keep)
-            cnn_checkpoint_manager = tf.train.CheckpointManager(cnn_ckpt, checkpoints_dir, max_to_keep=args.max_to_keep)
+            checkpoint_manager = tf.train.CheckpointManager(ckpt, os.path.join(checkpoints_dir, "rim"), max_to_keep=args.max_to_keep)
+            cnn_checkpoint_manager = tf.train.CheckpointManager(cnn_ckpt, os.path.join(checkpoints_dir, "cnn"), max_to_keep=args.max_to_keep)
 
     else:
         save_checkpoint = False
@@ -294,6 +297,8 @@ def main(args):
                 cnn_checkpoint_manager.save()
                 print("Saved checkpoint for step {}: {}".format(int(checkpoint_manager.checkpoint.step),
                                                                 checkpoint_manager.latest_checkpoint))
+                print("Saved checkpoint for step {}: {}".format(int(cnn_checkpoint_manager.checkpoint.step),
+                                                                cnn_checkpoint_manager.latest_checkpoint))
         if patience == 0:
             print("Reached patience")
             break
