@@ -425,7 +425,7 @@ class PhysicalModel:
         qs, phi_s = self._ellipticity_to_qphi(e1s, e2s)
         n = (self.n_max - self.n_min) * (tf.tanh(n) + 1.)/2 + self.n_min
         r_eff = (self.r_eff_max - self.r_eff_min) * (tf.tanh(r_eff) + 1.)/2 + self.r_eff_min
-        z = tf.concat([r_ein, q, phi, x0, y0, gamma, gamma_phi, xs, ys, qs, phi_s, n, r_eff], axis=1)
+        z = tf.concat([r_ein, q, phi, x0, y0, gamma, gamma_phi, xs, ys, qs, phi_s, n, r_eff], axis=-1)
         return z
 
     def physical_to_model(self, z):
@@ -495,7 +495,7 @@ class PhysicalModel:
         qs, phi_s = self._ellipticity_to_qphi(e1s, e2s)
         n = tf.random.uniform(shape=(batch_size, 1), minval=self.n_min, maxval=self.n_max)
         r_eff = tf.random.uniform(shape=(batch_size, 1), minval=self.r_eff_min, maxval=self.r_eff_max)
-        x = tf.concat([r_ein, q, phi, x0, y0, gamma, gamma_phi, xs, ys, qs, phi_s, n, r_eff], axis=1)
+        x = tf.concat([r_ein, q, phi, x0, y0, gamma, gamma_phi, xs, ys, qs, phi_s, n, r_eff], axis=-1)
 
         noise_rms = self.noise_rms_pdf.sample(sample_shape=(batch_size))
         psf_fwhm = self.psf_fwhm_pdf.sample(sample_shape=(batch_size))
